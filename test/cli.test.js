@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { main, parse, output } from '../lib/cli.js';
 import { CliError } from '../lib/errors.js';
 import { binding, browserCommand, runChild } from '../lib/process.js';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { spawn } from 'node:child_process';
 
 const id = 'a'.repeat(24), token = `${id}.${'b'.repeat(64)}`;
 const saved = { access_token: token, scope: 'own', expires_at: '2030-01-01T00:00:00Z' };
@@ -100,7 +105,7 @@ test('status is projected and missing/revoked connection fails closed', async ()
 });
 
 test('list/search uses only metadata endpoint and pagination', async () => {
-  const state = fixture([{ data: [], count: 0 }]); state.saved = saved;
+  const state = fixture([{ items: [], folders: [], count: 0 }]); state.saved = saved;
   assert.equal(await main(['list', '--search', 'Fixture', '--limit', '50', '--skip', '10'], state.context), 0);
   assert.deepEqual(state.calls[0].values, { search: 'Fixture', limit: 50, skip: 10 });
   assert.equal(state.calls[0].path, 'items/list');
@@ -157,4 +162,93 @@ test('cancelling login does not continue polling or store credentials', async ()
   state.context.sleep = async () => { throw new DOMException('Cancelled', 'AbortError'); };
   assert.equal(await main(['login'], state.context), 130);
   assert.equal(state.saved, null); assert.equal(state.calls.length, 1);
+});
+
+test('invalid commands and API input bounds fail before opening the keychain or revealing secrets', async () => {
+  for (const args of [
+    ['run', '--env', `X=${id}:password`, '--', 'unsafe.cmd'],
+    ['run', '--env', `X=${id}:password`, '--', 'example', 'bad\0arg'],
+    ['run', '--env', `NODE_OPTIONS=${id}:password`, '--', 'example'],
+    ['get', id, '--field', 'totp'], ['get', id, '--field', ''],
+    ['list', '--skip', '100001'], ['list', '--search', 'x'.repeat(201)],
+    ['login', '--name', '\u00e6'.repeat(41)],
+  ]) {
+    const state = fixture(); let opened = false;
+    state.context.credentialsFactory = async () => { opened = true; return state.credentials; };
+    assert.equal(await main(args, state.context), 1);
+    assert.equal(opened, false); assert.equal(state.calls.length, 0);
+  }
+  assert.equal(parse(['get', id, '--field', 'address1']).field, 'address1');
+});
+
+test('a login saved while browser approval was pending is preserved; the new approval is revoked', async () => {
+  const state = fixture([device, authorized, {}]); let reads = 0;
+  state.credentials.load = async () => ++reads === 1 ? null : saved;
+  state.credentials.save = async () => assert.fail('Must not overwrite another connection');
+  assert.equal(await main(['login'], state.context), 1);
+  assert.equal(state.calls.at(-1).path, 'logout');
+});
+
+test('cancellation after approval but before keychain save revokes that approval', async () => {
+  const controller = new AbortController(); const state = fixture([device, authorized, {}]);
+  state.context.signal = controller.signal;
+  state.context.sleep = async () => { controller.abort(); };
+  assert.equal(await main(['login'], state.context), 130);
+  assert.equal(state.saved, null); assert.equal(state.calls.at(-1).path, 'logout');
+});
+
+test('run reuses identical fields only within one invocation and clears its temporary environment', async () => {
+  const state = fixture(); state.saved = saved;
+  let received;
+  state.context.child = async (_, env) => {
+    received = env;
+    assert.equal(env.FIRST, 'synthetic-secret'); assert.equal(env.SECOND, 'synthetic-secret');
+    assert.equal(env.__proto__, 'synthetic-secret'); assert.equal(Object.getPrototypeOf(env), null);
+    throw new CliError('command_failed', 'Synthetic failure');
+  };
+  const args = ['run', '--env', `FIRST=${id}:password`, '--env', `SECOND=${id}:password`, '--env', `__proto__=${id}:password`, '--', 'example'];
+  assert.equal(await main(args, state.context), 1);
+  assert.equal(state.calls.length, 1); assert.deepEqual(Object.keys(received), []);
+  assert.ok(!(state.out + state.err).includes('synthetic-secret'));
+});
+
+test('run never starts a child after a failed field read or cancellation', async () => {
+  for (const cancel of [false, true]) {
+    const state = fixture(); state.saved = saved; const controller = new AbortController();
+    state.context.signal = controller.signal;
+    state.context.clientFactory = () => ({ field: async () => {
+      if (!cancel) throw new CliError('unavailable', 'Synthetic failure');
+      controller.abort(); return 'synthetic-secret';
+    } });
+    state.context.child = async () => assert.fail('Must not spawn');
+    assert.equal(await main(['run', '--env', `X=${id}:password`, '--', 'example'], state.context), cancel ? 130 : 1);
+    assert.ok(!(state.out + state.err).includes('synthetic-secret'));
+  }
+});
+
+test('cancellation waits for an actual child exit, including a child ignoring SIGTERM', { timeout: 15000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fogipass-child-test-'));
+  const path = join(dir, 'ready'); const controller = new AbortController();
+  const script = `process.on('SIGTERM', () => {}); require('node:fs').writeFileSync(${JSON.stringify(path)}, String(process.pid)); setInterval(() => {}, 1000);`;
+  const stopped = assert.rejects(runChild([process.execPath, '-e', script], { ...process.env }, controller.signal), { name: 'AbortError' });
+  try {
+    let pid;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      try { pid = Number(await readFile(path, 'utf8')); break; } catch { await delay(25); }
+    }
+    assert.ok(pid, 'Child must become ready'); controller.abort(); await stopped;
+    assert.throws(() => process.kill(pid, 0), error => error.code === 'ESRCH');
+  } finally { controller.abort(); await stopped; await rm(dir, { recursive: true, force: true }); }
+});
+
+test('an already-cancelled command is never spawned', async () => {
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(runChild(['nonexistent-fogipass-test-executable'], {}, controller.signal), { name: 'AbortError' });
+});
+
+test('closed output pipes do not produce uncaught exceptions', async () => {
+  const child = spawn(process.execPath, ['bin/fogipass.js', '--help'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let error = ''; child.stderr.on('data', value => { error += value; }); child.stdout.destroy();
+  const code = await new Promise(resolve => child.once('close', resolve));
+  assert.equal(code, 0); assert.equal(error, '');
 });

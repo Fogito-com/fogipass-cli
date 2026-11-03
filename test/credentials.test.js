@@ -46,3 +46,16 @@ test('native library overrides are rejected before loading a keychain', async ()
   try { await assert.rejects(createCredentials('dev')); }
   finally { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; }
 });
+
+test('invalid writes are rejected and silent write failures are detected by reading back', async () => {
+  let writes = 0;
+  const credentials = new Credentials({ setPassword: async () => { writes++; }, getPassword: async () => null });
+  await assert.rejects(credentials.save({ ...value, access_token: 'bad' }), error => error.code === 'invalid_credential');
+  assert.equal(writes, 0);
+  await assert.rejects(credentials.save(value), error => error.code === 'keychain_unavailable');
+  assert.equal(writes, 1);
+  for (const raw of ['bad json', '{}', 'x'.repeat(4097)]) {
+    await assert.rejects(new Credentials({ getPassword: async () => raw }).load(), error => error.code === 'invalid_credential');
+  }
+  assert.deepEqual(await new Credentials({ getPassword: async () => JSON.stringify({ ...value, extra: 'ignored' }) }).load(), value);
+});

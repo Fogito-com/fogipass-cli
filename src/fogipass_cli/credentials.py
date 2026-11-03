@@ -1,5 +1,9 @@
 import json
+import re
+import uuid
+from datetime import datetime
 import keyring
+from .client import TOKEN
 
 SERVICE = "com.fogito.fogipass.cli"
 BACKENDS = {"keyring.backends.macOS.Keyring", "keyring.backends.Windows.WinVaultKeyring",
@@ -9,6 +13,16 @@ BACKENDS = {"keyring.backends.macOS.Keyring", "keyring.backends.Windows.WinVault
 
 class CredentialError(Exception):
     pass
+
+
+def credential(value):
+    try:
+        if not isinstance(value, dict) or not isinstance(value.get("access_token"), str) or not re.fullmatch(TOKEN, value["access_token"]) or value.get("scope") not in {"own", "company"}:
+            raise ValueError()
+        datetime.fromisoformat(value["expires_at"].replace("Z", "+00:00"))
+        return {key: value[key] for key in ("access_token", "scope", "expires_at")}
+    except (KeyError, ValueError, TypeError, AttributeError):
+        raise CredentialError("Invalid saved connection. Revoke it in FogiPass Settings and remove its legacy keychain entry.") from None
 
 
 class Credentials:
@@ -28,15 +42,37 @@ class Credentials:
     def load(self):
         try:
             value = self.backend.get_password(SERVICE, self.environment)
-            return json.loads(value) if value else None
+            if value is None:
+                return None
+            if not isinstance(value, str) or len(value) > 4096:
+                raise ValueError()
+            parsed = json.loads(value)
+            return parsed if parsed == {"pending": True} else credential(parsed)
         except Exception as error:
             raise CredentialError("Could not read the OS keychain. Unlock it and try again.") from error
 
     def save(self, value):
+        expected = credential(value)
         try:
-            self.backend.set_password(SERVICE, self.environment, json.dumps(value))
+            self.backend.set_password(SERVICE, self.environment, json.dumps(expected))
+            if self.load() != expected:
+                raise ValueError()
         except Exception as error:
             raise CredentialError("Could not save the connection in the OS keychain.") from error
+
+    def probe(self):
+        account = str(uuid.uuid4())
+        try:
+            self.backend.set_password(SERVICE + ".probe", account, "fogipass-keychain-write-check")
+            if self.backend.get_password(SERVICE + ".probe", account) != "fogipass-keychain-write-check":
+                raise ValueError()
+        except Exception:
+            raise CredentialError("Could not verify OS keychain write access.") from None
+        finally:
+            try:
+                self.backend.delete_password(SERVICE + ".probe", account)
+            except Exception:
+                raise CredentialError("Could not remove the keychain probe.") from None
 
     def delete(self):
         try:

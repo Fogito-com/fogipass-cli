@@ -8,8 +8,8 @@ import sys
 import time
 import webbrowser
 
-from .client import Client, ApiError
-from .credentials import Credentials, CredentialError
+from .client import Client, ApiError, metadata_list, validate_field
+from .credentials import Credentials, CredentialError, credential
 
 
 def emit(value, raw=False):
@@ -28,12 +28,11 @@ def login(args, credentials):
     if previous:
         raise CredentialError("A connection is already stored. Run fogipass logout before connecting again.")
     # Check keychain write access before asking the user to authorize anything.
-    credentials.save({"pending": True})
-    credentials.delete()
+    credentials.probe()
     client = Client(args.environment)
     device = client.request("device/start", {"name": args.name})
     uri = client.origin + "/fogipass/settings/connections/authorize"
-    if device.get("verification_uri") != uri or not re.fullmatch(r"[A-F0-9]{4}(-[A-F0-9]{4}){2}", device.get("user_code", "")):
+    if device.get("verification_uri") != uri or not isinstance(device.get("user_code"), str) or not re.fullmatch(r"[A-F0-9]{4}(-[A-F0-9]{4}){2}", device["user_code"]) or not isinstance(device.get("device_code"), str) or not re.fullmatch(r"[a-f0-9]{64}", device["device_code"]) or type(device.get("expires_in")) is not int or not 1 <= device["expires_in"] <= 600 or device.get("interval") != 5:
         raise ApiError("invalid_response", "Invalid authorization response.")
     print(f"Open {uri}\nEnter this code on the authorization page: {device['user_code']}\nOnly approve the login you started here.", file=sys.stderr)
     if not args.no_browser:
@@ -41,6 +40,8 @@ def login(args, credentials):
     deadline = time.monotonic() + min(int(device["expires_in"]), 600)
     while time.monotonic() < deadline:
         time.sleep(5)
+        if time.monotonic() >= deadline:
+            break
         try:
             result = client.request("device/poll", {"device_code": device["device_code"]})
         except ApiError as error:
@@ -52,11 +53,14 @@ def login(args, credentials):
             continue
         if result.get("state") != "authorized":
             raise ApiError("authorization_denied", "Connection was not authorized.")
-        token = result.get("access_token", "")
-        if not re.fullmatch(r"[a-f0-9]{24}\.[a-f0-9]{64}", token):
+        value = credential(result)
+        token = value["access_token"]
+        if result.get("token_type") != "Bearer" or token != str(result.get("connection_id", "")) + "." + device["device_code"]:
             raise ApiError("invalid_response", "Invalid authorization response.")
         try:
-            credentials.save(result)
+            if credentials.load():
+                raise CredentialError("Another connection was saved during authorization. Check fogipass status.")
+            credentials.save(value)
         except CredentialError:
             try:
                 Client(args.environment, token).request("logout")
@@ -69,11 +73,13 @@ def login(args, credentials):
 
 
 def binding(value):
-    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)=([a-f0-9]{24}):([a-z_]+)", value)
+    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)=([a-f0-9]{24}):([a-z_][a-z0-9_]{0,63})", value)
     if not match:
         raise ValueError("Use --env VARIABLE=ITEM_ID:FIELD")
     name, item, field = match.groups()
-    if name in {"PATH", "PYTHONPATH", "PYTHONHOME", "BASH_ENV", "ENV", "NODE_OPTIONS", "GIT_CONFIG", "SHELLOPTS"} or name.startswith(("LD_", "DYLD_")):
+    validate_field(field)
+    upper = name.upper()
+    if upper in {"PATH", "PATHEXT", "COMSPEC", "SYSTEMROOT", "WINDIR", "HOME", "BASH_ENV", "ENV", "SHELLOPTS", "IFS", "ZDOTDIR"} or upper.startswith(("LD_", "DYLD_", "NODE_", "NAPI_RS_", "PYTHON", "GIT_", "NPM_", "BASH_FUNC_")):
         raise ValueError("Runtime-control environment variables cannot contain vault values")
     return name, item, field
 
@@ -104,7 +110,7 @@ def main():
             login(args, credentials)
             return
         saved = credentials.load()
-        if not saved or not re.fullmatch(r"[a-f0-9]{24}\.[a-f0-9]{64}", saved.get("access_token", "")):
+        if not isinstance(saved, dict) or not isinstance(saved.get("access_token"), str) or not re.fullmatch(r"[a-f0-9]{24}\.[a-f0-9]{64}", saved["access_token"]):
             raise CredentialError("Not connected. Run fogipass login.")
         client = Client(args.environment, saved["access_token"])
         if args.command == "logout":
@@ -115,9 +121,12 @@ def main():
                     raise  # Keep the local token so a failed revocation can be retried.
             credentials.delete(); emit({"connected": False})
         elif args.command == "status":
-            emit(client.request("status"))
+            status = client.request("status")
+            if any(not isinstance(status.get(key), str) for key in ("name", "owner_name", "scope", "expires_at")):
+                raise ValueError("Invalid status response")
+            emit({key: status[key] for key in ("name", "owner_name", "scope", "expires_at")})
         elif args.command == "list":
-            emit(client.request("items/list", {"search": args.search, "limit": args.limit, "skip": args.skip}))
+            emit(metadata_list(client.request("items/list", {"search": args.search, "limit": args.limit, "skip": args.skip})))
         elif args.command == "get":
             if args.raw and not args.field:
                 raise ValueError("--raw requires --field")
@@ -127,22 +136,33 @@ def main():
             emit(result["code"] if args.raw else result, args.raw)
         elif args.command == "run":
             program = args.program[1:] if args.program[:1] == ["--"] else args.program
-            if not program:
-                raise ValueError("Specify a command after --")
+            if not program or not program[0] or program[0].lower().endswith((".cmd", ".bat")) or any("\0" in arg for arg in program):
+                raise ValueError("Specify an executable after --, not a Windows .cmd/.bat wrapper")
             bindings = [binding(value) for value in args.env]
-            if len({value[0] for value in bindings}) != len(bindings):
+            key = lambda name: name.upper() if os.name == "nt" else name
+            if len({key(value[0]) for value in bindings}) != len(bindings):
                 raise ValueError("Duplicate environment variable")
             env = os.environ.copy()
-            for name, item, field in bindings:
-                value = client.field(item, field)
-                if not isinstance(value, str) or "\x00" in value:
-                    raise ValueError("This field cannot be passed as an environment variable")
-                env[name] = value
-            completed = subprocess.run(program, env=env, shell=False)
-            raise SystemExit(completed.returncode)
-    except (ApiError, CredentialError, ValueError, OSError) as error:
+            values = {}
+            try:
+                for name, item, field in bindings:
+                    if (item, field) not in values:
+                        values[item, field] = client.field(item, field)
+                    value = values[item, field]
+                    if not isinstance(value, str) or "\x00" in value:
+                        raise ValueError("This field cannot be passed as an environment variable")
+                    for existing in list(env):
+                        if key(existing) == key(name):
+                            del env[existing]
+                    env[name] = value
+                completed = subprocess.run(program, env=env, shell=False)
+                raise SystemExit(completed.returncode if completed.returncode >= 0 else 128 - completed.returncode)
+            finally:
+                env.clear(); values.clear()
+    except (ApiError, CredentialError, ValueError, OSError, KeyError, TypeError) as error:
         # JSON escaping prevents names/error text from injecting terminal control sequences.
-        print(json.dumps({"error": getattr(error, "code", "cli_error"), "message": str(error)}, ensure_ascii=True), file=sys.stderr)
+        message = str(error) if isinstance(error, (ApiError, CredentialError)) else "The operation failed. Check the arguments, connection and OS keychain."
+        print(json.dumps({"error": getattr(error, "code", "cli_error"), "message": message}, ensure_ascii=True), file=sys.stderr)
         raise SystemExit(1)
     except KeyboardInterrupt:
         print("Cancelled. Any pending authorization expires after 10 minutes.", file=sys.stderr)

@@ -72,7 +72,7 @@ npx fogipass-cli logout
 ```
 
 For repeatable automation, pin a reviewed version, for example
-`npx fogipass-cli@0.2.1 status`. Global installation and `npx` share the same
+`npx fogipass-cli@1.0.0 status`. Global installation and `npx` share the same
 OS-keychain connection for each environment. `npx` caches program files, not
 vault credentials. Installation also works with scripts disabled.
 
@@ -101,6 +101,7 @@ fogipass list --search "Hosting" --limit 20 --skip 0
 ```
 
 Supported limits are 5, 10, 20, 50 and 100.
+Search accepts up to 200 UTF-8 bytes; `--skip` accepts 0 through 100000.
 
 ### Retrieve a password or code
 
@@ -132,6 +133,10 @@ fogipass run --env SERVICE_PASSWORD=ITEM_ID:password -- your-executable
 in the child process's environment, not in its command arguments. The CLI does
 not print the injected value, but the child program must also avoid logging it.
 On Windows, use an executable such as `node.exe`, not a `.cmd` or `.bat` wrapper.
+Multiple variables referencing the same item field reuse one read during that
+command; values are never cached between commands. Cancellation waits for the
+direct child to stop, escalating to termination after one second if necessary.
+Detached descendants are not managed by the CLI.
 
 Environment injection is **not a sandbox**: the child and same-user OS processes
 can access those values. Never inject secrets into untrusted code. Runtime-control
@@ -202,6 +207,8 @@ under `com.fogito.fogipass.cli.npm`.
 Run logout with the old Python 0.1 executable, then log in with the npm CLI.
 The npm version deliberately does not read, copy or overwrite the older
 connection. The legacy implementation remains in `src/` and is excluded from npm.
+It is a compatibility snapshot, not the recommended installation or a separate
+1.0.0 Python release. Use the Node.js CLI for current releases.
 
 ## Development
 
@@ -228,6 +235,8 @@ commit credentials, customer data, runtime secrets or keychain exports.
 
 Maintainers: see the
 [publishing guide](https://github.com/Fogito-com/fogipass-cli/blob/master/docs/PUBLISHING.md).
+Changes in 1.0.0 are recorded in the
+[changelog](https://github.com/Fogito-com/fogipass-cli/blob/master/CHANGELOG.md).
 The device-approval flow is inspired by RFC 8628; FogiPass CLI is not a general
 OAuth/OIDC provider. This repository is publicly visible; the package remains
 `UNLICENSED` and does not grant an open-source license.

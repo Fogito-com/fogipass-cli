@@ -28,6 +28,20 @@ read the legacy Python client's credentials. No plaintext configuration, token
 environment variable, installation script or browser session export is used.
 Only fixed production/DEV HTTPS origins are allowed; redirects are rejected,
 responses are size/time bounded and error output does not echo server/native errors.
+Metadata output also uses a client-side field allowlist. Keychain writes are read
+back before login succeeds; failed persistence triggers a revocation attempt.
+If that attempt cannot reach Fogito, revoke the connection in Settings.
+
+Run only one login/logout operation per environment at a time. A login rechecks
+the keychain after browser approval, but OS keychain reads and writes are not an
+atomic cross-process transaction. Review Authorized connections after interrupted
+or overlapping approvals. No persistent token lock file or local vault is created.
+
+Temporary references used by `run` are cleared after success or failure. JavaScript
+strings cannot be reliably zeroized; this is not a promise of immediate memory
+erasure. Cancellation stops the direct child, not detached descendants. Secret
+output is always deliberate, including JSON output from `get --field` and `totp`,
+not only `--raw`. The recipient process is responsible for its own output handling.
 
 The npm package has an explicit file allowlist. Runtime dependency versions are
 pinned. Publication is manual initially; the subsequent GitHub workflow uses OIDC,
