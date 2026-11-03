@@ -1,11 +1,33 @@
 # Publishing FogiPass CLI to npm
 
-Prepared package: `fogipass-cli` version `0.2.0`; executable: `fogipass`.
-This guide does not mean the package has already been published. The registry
-name was unclaimed when preparation began; check again before publishing.
+Package: `fogipass-cli`; executable: `fogipass`. The first public release,
+`0.2.0`, was published on 3 November 2026 (UTC). Verify current versions and
+ownership in the registry before each release.
 No npm credential belongs in this repository or its GitHub Actions secrets.
 
-## One-time first publication
+## Updating the package and npm page
+
+npm renders the README bundled with the published package. It does not sync
+README edits from GitHub. Branding/documentation changes therefore need a new
+patch version even when command behavior is unchanged.
+
+1. Update `README.md`. Keep image URLs absolute so they render on both GitHub
+   and npm. The approved logo is in `assets/fogipass-logo.png` on GitHub; it is
+   intentionally excluded from the runtime package allowlist.
+2. Bump the version in `package.json`, `lib/client.js` and `package-lock.json`.
+3. Test and scan the exact package on `alpha`, push it and wait for CI to pass.
+   Promote the reviewed commit to `master` and verify its CI too.
+4. Publish through the trusted workflow below if the owner has configured it.
+   Otherwise use the owner's existing interactive npm login, then run
+   `npm publish --access public` from the clean reviewed `master` checkout.
+   Complete npm's browser/2FA approval yourself; never share credentials in chat.
+5. Verify `npm view fogipass-cli version repository dist.integrity`, the README
+   returned by `npm view fogipass-cli readme`, and the package page. Run the exact
+   new version with `npx fogipass-cli@VERSION --version` without logging in.
+
+Source: [npm README updates](https://docs.npmjs.com/about-package-readme-files/).
+
+## First-publication reference (completed for 0.2.0)
 
 1. Sign in or create the npm account that should own this unscoped package.
    Verify its email and enable two-factor authentication. Keep recovery codes
