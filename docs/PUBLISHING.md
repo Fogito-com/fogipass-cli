@@ -12,8 +12,9 @@ README edits from GitHub. Branding/documentation changes therefore need a new
 patch version even when command behavior is unchanged.
 
 1. Update `README.md`. Keep image URLs absolute so they render on both GitHub
-   and npm. The approved logo is in `assets/fogipass-logo.png` on GitHub; it is
-   intentionally excluded from the runtime package allowlist.
+   and npm. Pin the logo URL to the reviewed Git commit containing the asset to
+   avoid branch-cache delays. The logo is in `assets/fogipass-logo.png` on GitHub
+   and is intentionally excluded from the runtime package allowlist.
 2. Bump the version in `package.json`, `lib/client.js` and `package-lock.json`.
 3. Test and scan the exact package on `alpha`, push it and wait for CI to pass.
    Promote the reviewed commit to `master` and verify its CI too.

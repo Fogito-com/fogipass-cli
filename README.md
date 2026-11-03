@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Fogito-com/fogipass-cli">
-    <img src="https://raw.githubusercontent.com/Fogito-com/fogipass-cli/master/assets/fogipass-logo.png" width="128" height="128" alt="FogiPass circular vault logo">
+    <img src="https://raw.githubusercontent.com/Fogito-com/fogipass-cli/2e053216b380d2b68dbb54234352b12cb44c8354/assets/fogipass-logo.png" width="128" height="128" alt="FogiPass circular vault logo">
   </a>
 </p>
 
