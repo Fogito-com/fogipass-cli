@@ -1,0 +1,59 @@
+name: Publish npm package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version to publish from master
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'Fogito-com/fogipass-cli' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Check requested version
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: node --input-type=module -e 'import fs from "node:fs"; if (JSON.parse(fs.readFileSync("package.json")).version !== process.env.EXPECTED_VERSION) process.exit(1);'
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run check:package
+      - run: npm run test:package
+  publish:
+    needs: verify
+    if: github.repository == 'Fogito-com/fogipass-cli' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Publish with npm trusted publishing
+        # Verification runs without OIDC privileges. No dependency/install hook is
+        # executed in this privileged job; this package needs no build step.
+        run: npm publish --ignore-scripts --access public --provenance

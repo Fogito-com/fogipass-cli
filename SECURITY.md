@@ -22,6 +22,19 @@ The CLI is read-only. Authorize only connections you initiated, use the narrowes
 scope and revoke connections you no longer need. Never run untrusted programs with
 secrets provided by `fogipass run`, and remember that output from `--raw` is plaintext.
 
+The npm client requires a native keychain, explicitly selecting Secret Service on
+Linux and rejecting native-library override/WASI environment flags. It does not
+read the legacy Python client's credentials. No plaintext configuration, token
+environment variable, installation script or browser session export is used.
+Only fixed production/DEV HTTPS origins are allowed; redirects are rejected,
+responses are size/time bounded and error output does not echo server/native errors.
+
+The npm package has an explicit file allowlist. Runtime dependency versions are
+pinned. Publication is manual initially; the subsequent GitHub workflow uses OIDC,
+an exact version check and an npm environment approval gate configured by the owner.
+These measures do not protect against a compromised OS, Node runtime, trusted
+dependency or application server, and are not an independent security audit.
+
 ## Contributing safely
 
 Never commit passwords, connection tokens, real vault exports, customer data,

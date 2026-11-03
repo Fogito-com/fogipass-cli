@@ -1,0 +1,22 @@
+{
+  "name": "fogipass-cli",
+  "version": "0.2.0",
+  "description": "Read-only, browser-authorized FogiPass company vault CLI",
+  "type": "module",
+  "bin": { "fogipass": "bin/fogipass.js" },
+  "engines": { "node": ">=22.14.0" },
+  "license": "UNLICENSED",
+  "repository": { "type": "git", "url": "git+https://github.com/Fogito-com/fogipass-cli.git" },
+  "homepage": "https://github.com/Fogito-com/fogipass-cli#readme",
+  "bugs": { "url": "https://github.com/Fogito-com/fogipass-cli/issues" },
+  "files": ["bin/", "lib/", "README.md", "SECURITY.md"],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:package": "node scripts/package-smoke.mjs",
+    "test:keychain": "node scripts/keychain-smoke.mjs",
+    "check:package": "node scripts/verify-pack.mjs",
+    "prepublishOnly": "npm test && npm run check:package"
+  },
+  "dependencies": { "@napi-rs/keyring": "2.1.2" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }
+}
