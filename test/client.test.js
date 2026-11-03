@@ -70,3 +70,10 @@ test('abort reaches fetch and remains a cancellation, not a credential error', a
   const client = new Client('dev', null, { signal: controller.signal, fetchImpl: async (_, options) => { options.signal.throwIfAborted(); } });
   await assert.rejects(client.request('status'), { name: 'AbortError' });
 });
+
+test('disabled TLS verification is rejected before any credential is sent', () => {
+  const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  try { assert.throws(() => new Client('production', token), error => error.code === 'insecure_environment'); }
+  finally { if (previous === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED; else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previous; }
+});
