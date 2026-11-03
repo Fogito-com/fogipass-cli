@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1 - 2026-11-04
+
+- Correct the 1.0.0 metadata validator to accept the API's `folder_id: null` for
+  items without a folder. This affected listing, metadata and explicit field reads.
+- Add complete API-shaped contract tests across Login, Card, Identity and Note,
+  both with and without folders, exercising the actual HTTP client and CLI together.
+- Use 1.0.1 instead of 1.0.0. The correction is a new immutable npm version;
+  the original 1.0.0 tag and package are retained for release history.
+
 ## 1.0.0 - 2026-11-04
 
 The first stable npm release retains the existing browser authorization flow,

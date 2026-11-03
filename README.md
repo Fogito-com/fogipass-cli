@@ -72,7 +72,7 @@ npx fogipass-cli logout
 ```
 
 For repeatable automation, pin a reviewed version, for example
-`npx fogipass-cli@1.0.0 status`. Global installation and `npx` share the same
+`npx fogipass-cli@1.0.1 status`. Global installation and `npx` share the same
 OS-keychain connection for each environment. `npx` caches program files, not
 vault credentials. Installation also works with scripts disabled.
 
@@ -235,7 +235,7 @@ commit credentials, customer data, runtime secrets or keychain exports.
 
 Maintainers: see the
 [publishing guide](https://github.com/Fogito-com/fogipass-cli/blob/master/docs/PUBLISHING.md).
-Changes in 1.0.0 are recorded in the
+Release changes are recorded in the
 [changelog](https://github.com/Fogito-com/fogipass-cli/blob/master/CHANGELOG.md).
 The device-approval flow is inspired by RFC 8628; FogiPass CLI is not a general
 OAuth/OIDC provider. This repository is publicly visible; the package remains

@@ -22,6 +22,9 @@ def metadata(value, folder=False):
     result = {}
     for field in fields:
         if field in value:
+            if field == "folder_id" and value[field] is None:
+                result[field] = None
+                continue
             if type(value[field]) is not (bool if field in {"has_totp", "can_manage"} else str):
                 raise ValueError("Invalid metadata response")
             result[field] = value[field]

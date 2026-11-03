@@ -89,11 +89,14 @@ class Tests(unittest.TestCase):
         self.assertEqual(creds.save.call_args.args[0]['access_token'], token)
 
     def test_metadata_projection_and_address_fields(self):
-        item = {'id': 'a' * 24, 'revision': 'revision', 'password': 'synthetic-secret'}
+        item = {'id': 'a' * 24, 'type': 'identity', 'name': 'Synthetic identity', 'owner_id': 'b' * 24,
+                'owner_name': 'Synthetic owner', 'folder_id': None, 'revision': 'c' * 32, 'has_totp': False,
+                'created_at': '2026-01-01T00:00:00Z', 'updated_at': '2026-01-01T00:00:00Z', 'password': 'synthetic-secret'}
         client = Client(); client.request = Mock(side_effect=[item, {'value': 'Synthetic address'}])
         self.assertEqual(client.field(item['id'], 'address1'), 'Synthetic address')
         result = metadata_list({'items': [item], 'folders': [item], 'count': 1, 'token': 'synthetic-secret'})
         self.assertNotIn('synthetic-secret', json.dumps(result))
+        self.assertIsNone(result['items'][0]['folder_id'])
         for field in ['totp', 'uris', 'custom_fields', 'bad-field']:
             with self.assertRaises(ValueError): client.field(item['id'], field)
         self.assertEqual(client.request.call_count, 2)
