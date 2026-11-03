@@ -13,6 +13,7 @@ const [pack] = JSON.parse(npm(['pack', '--dry-run', '--json', '--ignore-scripts'
 const allowed = ['package.json', 'README.md', 'SECURITY.md', 'bin/fogipass.js',
   'lib/cli.js', 'lib/client.js', 'lib/credentials.js', 'lib/errors.js', 'lib/process.js'];
 assert.deepEqual(pack.files.map(file => file.path).sort(), allowed.sort());
-assert.ok(pack.files.find(file => file.path === 'bin/fogipass.js').mode & 0o111);
+// Windows uses npm command shims, not POSIX executable permission bits.
+if (process.platform !== 'win32') assert.ok(pack.files.find(file => file.path === 'bin/fogipass.js').mode & 0o111);
 assert.ok(pack.unpackedSize < 100_000);
 console.log(`Package allowlist verified: ${pack.files.length} public files, no local config, tests, credentials or build hooks.`);
