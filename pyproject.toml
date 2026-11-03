@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fogipass-cli"
+version = "0.1.0"
+description = "Read-only, browser-authorized FogiPass company vault CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["keyring>=25.6,<26"]
+
+[project.urls]
+Repository = "https://github.com/Fogito-com/fogipass-cli"
+Issues = "https://github.com/Fogito-com/fogipass-cli/issues"
+Security = "https://github.com/Fogito-com/fogipass-cli/security/policy"
+
+[project.scripts]
+fogipass = "fogipass_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
